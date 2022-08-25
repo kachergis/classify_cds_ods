@@ -5,7 +5,7 @@
 
 library(shiny)
 library(here)
-library(dplyr)
+library(tidyverse)
 library(DT)
 library(xgboost)
 #library(kableExtra)
@@ -13,8 +13,6 @@ library(xgboost)
 required_columns <- c('id', 'AWC', 'CTC', 'CVC', 'dur_min', 'meaningful_min',
                       'tv_min', 'noise_min', 'silence_min', 'distant_min')
 
-# test data:
-#raw <- read.csv(here("data_SOT_Stanford_withNAPS.csv"))
 
 # load nap classifier
 nap_dtree <- readRDS(file="models/nap_classifier.Rds")
@@ -24,8 +22,8 @@ mod <- nap_dtree$tree.model
 cds_xgb <- readRDS(file="models/final_rawLENA_xgb_model.Rds")
 
 # select important columns and normalize to per-minute values
-get_features <- function(tbl) {
-  dat <- tbl %>% 
+get_features <- function(raw) {
+  dat <- raw %>% 
     mutate(AWC = AWC / dur_min, # per minute log(AWC+.01)
            CTC = CTC / dur_min, 
            CVC = CVC / dur_min,
@@ -48,18 +46,22 @@ get_nap_predictions <- function(dat) {
 }
 
 get_cds_predictions <- function(dat) {
-  xdat <- xgb.DMatrix(data.matrix(dat), missing = NA)
+  xdat <- xgb.DMatrix(data.matrix(dat %>% select(-id)), missing = NA)
   dat <- dat %>%
     mutate(cds_prob = predict(cds_xgb$model, xdat), # probability
            cds_pred = ifelse(cds_prob > .5, 1, 0)) # binarized
   return(dat)
 }
 
-# test
-#dat <- get_features(raw)
-#dat_naps <- get_nap_predictions(dat)
-#dat_cds <- get_cds_predictions(dat) # Feature names stored in `object` and `newdata` are different!
 
+# test 
+run_test <- function() {
+  raw <- read.csv(here("data_SOT_Stanford_withNAPS.csv"))
+  dat <- get_features(raw)
+  dat_naps <- get_nap_predictions(dat)
+  dat_cds <- get_cds_predictions(dat) # Feature names stored in `object` and `newdata` are different!
+}
+  
 # Define server logic 
 function(input, output, session) {
   # now simply need to 1) validate that uploaded data has the correct column names (and data types)
@@ -108,11 +110,12 @@ function(input, output, session) {
       dat <- mydata() %>% select(required_columns)
       proc_dat <- get_features(dat) # style the table?
       dat_naps <- get_nap_predictions(proc_dat)
-      #dat_cds <- get_cds_predictions(proc_dat) # 
-      dat_naps # proc_dat # for just the uploaded data
-    }) %>% formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful","nap_prob"), digits=1) %>%
-      formatRound(columns=c("nap_prob"), digits=2) %>% # "cds_prob"
-      formatRound(columns=c("nap_pred"), digits=0)
+      dat_cds <- get_cds_predictions(proc_dat) # 
+      dat_naps <- dat_naps %>% left_join(dat_cds) %>%
+        mutate(cds_pred = ifelse(nap_pred==1, NA, cds_pred)) # if napping, then don't give CDS prediction
+    }) %>% formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=1) %>%
+      formatRound(columns=c("nap_prob","cds_prob"), digits=2) %>% 
+      formatRound(columns=c("nap_pred","cds_pred"), digits=0)
     
     )
   
@@ -138,9 +141,9 @@ function(input, output, session) {
     req(input$dataset, mydata())
     overall_stats = mydata() %>% 
       mutate(Type = case_when(
-        cds_ohs=="0" ~ "Overheard Speech",
-        cds_ohs=="1" ~ "Child-directed Speech",
-        cds_ohs=='sleep' ~ "Sleep",
+        cds_pred==0 ~ "Overheard Speech",
+        cds_pred==1 ~ "Child-directed Speech",
+        #cds_ohs=='sleep' ~ "Sleep",
         TRUE ~ NA_character_,
       )) %>%
       group_by(Type) %>% 
