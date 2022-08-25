@@ -1,0 +1,14 @@
+name: classify_cds_ods
+title: classify_cds_ods
+username:
+account: kachergis
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 6843873
+bundleId: 6235427
+url: https://kachergis.shinyapps.io/classify_cds_ods/
+when: 1661391047.99694
+lastSyncTime: 1661391047.99696
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .gitattributes|data_SOT_Stanford_withNAPS.csv|README.md
