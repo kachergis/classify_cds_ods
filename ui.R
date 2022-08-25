@@ -4,7 +4,7 @@ library(shiny)
 ui <- fluidPage(
 
     # Application title
-    titlePanel("Identifying Naps and Child-directed Speech in LENA Segments"),
+    titlePanel("Identifying Naps and Child-directed Speech in Daylong LENA Recordings"),
 
     # Sidebar 
     sidebarLayout(
@@ -30,10 +30,22 @@ ui <- fluidPage(
         
         mainPanel(
             #tableOutput("contents"),
-          tabsetPanel(
+          tabsetPanel(id = "tabset",
             tabPanel("Overview and Instructions", 
-                   p("This shiny app will let you upload segment summaries from LENA recordings, and will assign a probability to each segment of it being 1) during a child's nap vs. a waking period, and 2) predominantly containing child-directed speech (CDS) vs. other-directed speech (ODS)."),
-                   h2("Required Data Format"),
+                   br(),
+                   h3("Overview"),
+                   p("This app will let you upload segment summaries from LENA recordings, and will assign a probability to each segment of it being 1) during a child's nap vs. a waking period, and 2) predominantly containing child-directed speech (CDS) vs. other-directed speech (ODS)."),
+                   #br(),
+                   h3("Instructions"),
+                   p("You will first need to export your LENA data in 5-minute segments, and then save them in a comma-/tab-separated format (see required column names below). Once you have your LENA segment data ready to upload, in the panel at left select 'Browse...' and navigate to that file."),
+                   p("Once the file is uploaded, you can view the 'Classified Data' tab, or simply download the classified data using the button in the left panel."),
+                   p("Your data will have four additional columns, denoting for each segment:"),
+                   p(HTML("<b>nap_prob</b> - the classifier-predicted probability that the child was predominantly asleep during recording (i.e., nap_prob=0.95 means the child was very likely napping, while nap_prob=.05 means the child was very likely awake)")),
+                   p(HTML("<b>nap_pred</b> - binarized nap_prob (1=asleep, 0=awake)")),
+                   p(HTML("<b>cds_prob</b> - the classifier-predicted probability that the segment contains predominantly CDS")),
+                   p(HTML("<b>cds_pred</b> - binarized cds_prob (1=CDS, 0=ODS)")),
+                   br(),
+                   h4("Required Data Format"),
                    p("The following columns are required (extra columns will be ignored; column order is not important):"),
                    p(HTML("<b>id</b> - participant identifier")),
                    p(HTML("<b>AWC</b> - total adult word count per segment")),
@@ -46,7 +58,8 @@ ui <- fluidPage(
                    p(HTML("<b>silence_min</b> - minutes of silence per segment")),
                    p(HTML("<b>distant_min</b> - minutes of distant speech per segment")),
                    p(HTML("All columns except <b>id</b> should be LENA-produced numeric values."))),
-            tabPanel("Uploaded Data", 
+            tabPanel("Classified Data", value="classified_data", type="hidden", # hidden until uploaded
+                   br(),
                    uiOutput("validate"),
                    DT::dataTableOutput("contents"))
           )
