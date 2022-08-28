@@ -79,17 +79,23 @@ function(input, output, session) {
     # input$dataset will be NULL initially. After the user selects
     # and uploads a file, it will be a data frame. The 'datapath'
     # column will contain the local filenames where the data can be found.
+    req(input$dataset)
     inFile <- input$dataset
     
-    if (is.null(inFile))
-      return(NULL)
+    if(is.null(inFile)) return(NULL)
     
     tbl <- read.csv(inFile$datapath, 
                     header = input$header, 
                     sep = input$sep,  
                     dec = input$dec)
     
-    return(tbl)
+    dat <- tbl %>% select(required_columns) # validate this?
+    proc_dat <- get_features(dat) 
+    dat_naps <- get_nap_predictions(proc_dat)
+    dat_cds <- get_cds_predictions(proc_dat) # 
+    dat_proc <- dat_naps %>% left_join(dat_cds)
+    
+    return(dat_proc)
   })
   
   # mention if any required columns were not found
@@ -107,60 +113,56 @@ function(input, output, session) {
   output$contents <- DT::renderDataTable(
     DT::datatable({
       req(input$dataset, mydata())
-      dat <- mydata() %>% select(required_columns)
-      proc_dat <- get_features(dat) # style the table?
-      dat_naps <- get_nap_predictions(proc_dat)
-      dat_cds <- get_cds_predictions(proc_dat) # 
-      dat_naps <- dat_naps %>% left_join(dat_cds) %>%
-        mutate(cds_pred = ifelse(nap_pred==1, NA, cds_pred)) # if napping, then don't give CDS prediction
+      
+      d <- mydata() %>%
+        mutate(cds_pred = ifelse(nap_pred==1, NA, cds_pred)) # if napping, then don't give CDS
     }) %>% formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=1) %>%
       formatRound(columns=c("nap_prob","cds_prob"), digits=2) %>% 
       formatRound(columns=c("nap_pred","cds_pred"), digits=0)
-    
     )
   
   
   # only show the download button once they've uploaded data
-  output$downloadData <- renderUI({
-    req(input$dataset, mydata())
-    downloadButton("downloadData")
+  output$download_button <- renderUI({
+    req(input$dataset, mydata()) # 
+    downloadButton("download_data", "Download Data", class = "btn-xs")
   })
   
-  output$download <- downloadHandler(
-    filename = function() {
-      paste0("nap_CDS_classifications", ".csv") # input$dataset
-    },
-    content = function(fname) {
+  output$download_data <- downloadHandler(
+    filename = function() "nap_CDS_classifications.csv", # input$dataset
+    content <- function(fname) {
       write.csv(mydata(), fname, row.names = FALSE)
     }
+    #contentType = "text/plain"
   )
   
   
   # show mean CVC/AWC/CTC etc for classifier-predicted OHS, CDS, and Naps
   output$summary_table <- DT::renderDataTable(DT::datatable({
-    req(input$dataset, mydata())
-    overall_stats = mydata() %>% 
+    req(mydata())
+    mydata() %>% 
       mutate(Type = case_when(
+        nap_prob>.9 ~ "Sleep", # 4200 nap segments??
         cds_pred==0 ~ "Overheard Speech",
         cds_pred==1 ~ "Child-directed Speech",
-        #cds_ohs=='sleep' ~ "Sleep",
         TRUE ~ NA_character_,
       )) %>%
       group_by(Type) %>% 
       summarise(CVC=mean(CVC), 
                 CTC=mean(CTC), 
                 AWC=mean(AWC), 
-                distant=mean(distant_min), 
-                noise=mean(noise_min), 
-                meaningful=mean(meaningful_min),
-                tv=mean(tv_min),
-                silence=mean(silence_min), N=n()) %>% 
+                distant=mean(distant), 
+                noise=mean(noise), 
+                meaningful=mean(meaningful),
+                tv=mean(tv),
+                silence=mean(silence), N=n()) %>% 
       arrange(CVC)
     #apa_table(overall_stats, digits = 2, caption= "Means for LENA variables by category.")
-  }))
+  }) %>% formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=1)
+  # options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')) # <- download button?
+  )
   
 }
-
 
 
 # Run the application 

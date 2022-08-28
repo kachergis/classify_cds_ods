@@ -25,7 +25,7 @@ ui <- fluidPage(
                          c('Comma (,)'=",",
                            'Point (.)'="."), '.'),
             
-            uiOutput("downloadData")
+            uiOutput("download_button")
         ),
         
         mainPanel(
@@ -60,8 +60,11 @@ ui <- fluidPage(
                    p(HTML("All columns except <b>id</b> should be LENA-produced numeric values."))),
             tabPanel("Classified Data", value="classified_data", type="hidden", # hidden until uploaded
                    br(),
-                   uiOutput("validate"),
-                   DT::dataTableOutput("contents"))
+                   #uiOutput("validate"),
+                   DT::dataTableOutput("contents")),
+            tabPanel("Summary Table", value="summary_table", type="hidden",
+                     br(),
+                     DT::dataTableOutput("summary_table"))
           )
           #tabPanel("Classified Data", tableOutput("table")),
           #tabPanel("Plot")
