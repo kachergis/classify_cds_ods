@@ -15,12 +15,10 @@ required_columns <- c('id', 'AWC', 'CTC', 'CVC', 'dur_min', 'meaningful_min',
 
 
 # load nap classifier
-nap_dtree <- readRDS(file="models/nap_classifier.Rds")
-mod <- nap_dtree$tree.model
+nap.model <- readRDS(file="models/nap_classifier.Rds")
 
 # load CDS classifier
-#cds_xgb <- readRDS(file="models/final_rawLENA_xgb_model.Rds")
-cds_xgb <- xgb.load("models/final_rawLENA_xgb.model")
+cds.model <- xgb.load("models/final_rawLENA_xgb.model")
 
 # select important columns and normalize to per-minute values
 get_features <- function(raw) {
@@ -41,7 +39,7 @@ get_features <- function(raw) {
 
 get_nap_predictions <- function(dat) {
   dat <- dat %>%
-    mutate(nap_prob = predict(mod, dat)[,2], # probability of a segment being a nap
+    mutate(nap_prob = predict(nap.model, dat)[,2], # probability of a segment being a nap
            nap_pred = ifelse(nap_prob > .5, 1, 0)) # binarized
   return(dat)
 }
@@ -49,7 +47,7 @@ get_nap_predictions <- function(dat) {
 get_cds_predictions <- function(dat) {
   xdat <- xgb.DMatrix(data.matrix(dat %>% select(-id)), missing = NA)
   dat <- dat %>%
-    mutate(cds_prob = predict(cds_xgb, xdat), # probability
+    mutate(cds_prob = predict(cds.model, xdat), # probability
            cds_pred = ifelse(cds_prob > .5, 1, 0)) # binarized
   return(dat)
 }
@@ -58,9 +56,19 @@ get_cds_predictions <- function(dat) {
 # test 
 run_test <- function() {
   raw <- read.csv(here("data_SOT_Stanford_withNAPS.csv"))
-  dat <- get_features(raw)
-  dat_naps <- get_nap_predictions(dat)
-  dat_cds <- get_cds_predictions(dat) # Feature names stored in `object` and `newdata` are different!
+  dat <- get_features(raw) 
+  table(raw$cds_ohs) # human raters: 427 sleep, 2028 CDS, 267 split, 768 ODS
+  dat_naps <- get_nap_predictions(dat) %>% 
+    mutate(segment = 1:n())
+  table(dat_naps$nap_pred) # 350 sleep, 3140 awake
+  dat_cds <- get_cds_predictions(dat) %>% # Feature names stored in `object` and `newdata` are different!
+    mutate(segment = 1:n())
+  table(dat_cds$cds_pred) # 833 ODS, 2657 CDS
+  
+  dat_proc <- dat_naps %>% left_join(dat_cds) %>%
+    mutate(cds_pred = ifelse(nap_pred==1, NA, cds_pred))
+  #table(dat_proc$nap_pred) # 350 sleep, 3140 awake
+  #table(dat_proc$cds_pred) # 2606 CDS, 534 ODS
 }
   
 # Define server logic 
@@ -92,9 +100,12 @@ function(input, output, session) {
     
     dat <- tbl %>% select(required_columns) # validate this?
     proc_dat <- get_features(dat) 
-    dat_naps <- get_nap_predictions(proc_dat)
-    dat_cds <- get_cds_predictions(proc_dat) # 
-    dat_proc <- dat_naps %>% left_join(dat_cds)
+    dat_naps <- get_nap_predictions(proc_dat) %>%
+      mutate(segment = 1:n())
+    dat_cds <- get_cds_predictions(proc_dat) %>%
+      mutate(segment = 1:n())
+    dat_proc <- dat_naps %>% left_join(dat_cds) %>%
+      mutate(cds_pred = ifelse(nap_pred==1, NA, cds_pred)) # if napping, then don't classify CDS/ODS
     
     return(dat_proc)
   })
@@ -114,10 +125,9 @@ function(input, output, session) {
   output$contents <- DT::renderDataTable(
     DT::datatable({
       req(input$dataset, mydata())
-      
-      d <- mydata() %>%
-        mutate(cds_pred = ifelse(nap_pred==1, NA, cds_pred)) # if napping, then don't give CDS
-    }) %>% formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=1) %>%
+      mydata() %>% select(-segment)
+    }, rownames= FALSE) %>% 
+      formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=1) %>%
       formatRound(columns=c("nap_prob","cds_prob"), digits=2) %>% 
       formatRound(columns=c("nap_pred","cds_pred"), digits=0)
     )
@@ -143,7 +153,7 @@ function(input, output, session) {
     req(mydata())
     mydata() %>% 
       mutate(Type = case_when(
-        nap_prob>.9 ~ "Sleep", # 4200 nap segments??
+        nap_pred==1 ~ "Sleep", 
         cds_pred==0 ~ "Overheard Speech",
         cds_pred==1 ~ "Child-directed Speech",
         TRUE ~ NA_character_,
@@ -158,8 +168,7 @@ function(input, output, session) {
                 tv=mean(tv),
                 silence=mean(silence), N=n()) %>% 
       arrange(CVC)
-    #apa_table(overall_stats, digits = 2, caption= "Means for LENA variables by category.")
-  }) %>% formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=1)
+  }, rownames= FALSE) %>% formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=2)
   # options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')) # <- download button?
   )
   
