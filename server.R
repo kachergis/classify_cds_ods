@@ -19,7 +19,8 @@ nap_dtree <- readRDS(file="models/nap_classifier.Rds")
 mod <- nap_dtree$tree.model
 
 # load CDS classifier
-cds_xgb <- readRDS(file="models/final_rawLENA_xgb_model.Rds")
+#cds_xgb <- readRDS(file="models/final_rawLENA_xgb_model.Rds")
+cds_xgb <- xgb.load("models/final_rawLENA_xgb.model")
 
 # select important columns and normalize to per-minute values
 get_features <- function(raw) {
@@ -48,7 +49,7 @@ get_nap_predictions <- function(dat) {
 get_cds_predictions <- function(dat) {
   xdat <- xgb.DMatrix(data.matrix(dat %>% select(-id)), missing = NA)
   dat <- dat %>%
-    mutate(cds_prob = predict(cds_xgb$model, xdat), # probability
+    mutate(cds_prob = predict(cds_xgb, xdat), # probability
            cds_pred = ifelse(cds_prob > .5, 1, 0)) # binarized
   return(dat)
 }
