@@ -5,10 +5,10 @@ account: kachergis
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 6843873
-bundleId: 6246001
+bundleId: 6310087
 url: https://kachergis.shinyapps.io/classify_cds_ods/
-when: 1661722569.52601
-lastSyncTime: 1661722569.52602
+when: 1663352971.07723
+lastSyncTime: 1663352971.07724
 asMultiple: FALSE
 asStatic: FALSE
-ignoredFiles: .gitattributes|data_SOT_Stanford_withNAPS.csv|models/.DS_Store|README.md
+ignoredFiles: .gitattributes|data_sample_00h00m00s.csv|data_SOT_Stanford_withNAPS.csv|models/.DS_Store|README.md
