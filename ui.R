@@ -25,7 +25,8 @@ ui <- fluidPage(
                          c('Comma (,)'=",",
                            'Point (.)'="."), '.'),
             
-            uiOutput("download_button")
+            uiOutput("download_button"),
+        width = 3
         ),
         
         mainPanel(
@@ -43,8 +44,8 @@ ui <- fluidPage(
                    p("Your data will have four additional columns, denoting for each segment:"),
                    p(HTML("<b>nap_prob</b> - the classifier-predicted probability that the child was predominantly asleep during recording (i.e., nap_prob=0.95 means the child was very likely napping, while nap_prob=.05 means the child was very likely awake)")),
                    p(HTML("<b>nap_pred</b> - binarized nap_prob (1=asleep, 0=awake)")),
-                   p(HTML("<b>cds_prob</b> - the classifier-predicted probability that the segment contains predominantly CDS")),
-                   p(HTML("<b>cds_pred</b> - binarized cds_prob (1=CDS, 0=ODS)")),
+                   p(HTML("<b>cds_prob</b> - the classifier-predicted probability that the segment contains predominantly CDS (NA if asleep)")),
+                   p(HTML("<b>cds_pred</b> - binarized cds_prob (1=CDS, 0=ODS; NA if asleep)")),
                    p("Note that the segments in your downloaded data will be in the same order as your uploaded segments, but that the LENA speech values (AWC, CTC, CVC) will now be normalized to per-minute values (e.g., AWC/dur_min). Extra variables will be dropped."),
                    br(),
                    h4("Required Data Format"),
@@ -70,10 +71,11 @@ ui <- fluidPage(
                      p("Note: the sleep classifier is applied to the data first, and any segments that are classified as 'sleep' are excluded from CDS/ODS classification, and are given 'NA' values."),
                      br(),
                      DT::dataTableOutput("summary_table"))
-          )
+          ),
           #tabPanel("Classified Data", tableOutput("table")),
           #tabPanel("Plot")
             #downloadButton("Download Predictions") # should only show once they've uploaded data
+        width = 9
         )
     )
 )

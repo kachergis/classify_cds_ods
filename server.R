@@ -75,7 +75,8 @@ run_test <- function() {
   table(dat_cds$cds_pred) # 833 ODS, 2657 CDS
   
   proc_dat <- dat_naps %>% left_join(dat_cds) %>%
-    mutate(cds_pred = ifelse(sleep_pred==1, NA, cds_pred))
+    mutate(cds_pred = ifelse(sleep_pred==1, NA, cds_pred),
+           cds_prob = ifelse(sleep_pred==1, NA, cds_prob))
   #table(proc_dat$sleep_pred) # 350 sleep, 3140 awake
   #table(proc_dat$cds_pred) # 2606 CDS, 534 ODS
   
@@ -119,7 +120,8 @@ function(input, output, session) {
     dat_cds <- get_cds_predictions(proc_dat) %>%
       mutate(segment = 1:n())
     proc_dat <- dat_naps %>% left_join(dat_cds) %>%
-      mutate(cds_pred = ifelse(sleep_pred==1, NA, cds_pred)) # if napping, then don't classify CDS/ODS
+      mutate(cds_pred = ifelse(sleep_pred==1, NA, cds_pred), # if napping, then don't classify CDS/ODS
+             cds_prob = ifelse(sleep_pred==1, NA, cds_prob)) 
     
     raw_dat <- raw_dat %>%
       rename(AWC_total = AWC, 
