@@ -65,6 +65,7 @@ get_cds_predictions <- function(dat) {
 run_test <- function() {
   raw <- read.csv(here("data_sample_00h00m00s.csv")) # with LENA pro HMS duration format
   raw <- read.csv(here("data_SOT_Stanford_withNAPS.csv"))
+  raw <- read.csv(here("data_example_classifer_7334_habla25.csv")) # a lot of NA values
   dat <- get_features(raw) 
   table(raw$cds_ohs) # human raters: 427 sleep, 2028 CDS, 267 split, 768 ODS
   dat_naps <- get_sleep_predictions(dat) %>% 
@@ -109,7 +110,8 @@ function(input, output, session) {
                     sep = input$sep,  
                     dec = input$dec)
     
-    dat <- raw_dat %>% select(required_columns) # validate this?
+    dat <- raw_dat %>% select(required_columns) %>% # validate this?
+      drop_na() # remove rows with NA values
     
     # want to save uploaded data, and add classification columns to it for download
     
@@ -149,7 +151,7 @@ function(input, output, session) {
   output$contents <- DT::renderDataTable(
     DT::datatable({
       req(input$dataset, mydata())
-      mydata() %>% select(id, AWC, CTC, CVC, noise, silence, distant, tv, meaningful, sleep_prob, cds_prob, sleep_pred, cds_pred)
+      mydata() %>% filter(!is.na(AWC)) %>% select(id, AWC, CTC, CVC, noise, silence, distant, tv, meaningful, sleep_prob, cds_prob, sleep_pred, cds_pred)
     }, rownames= FALSE) %>% 
       formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=1) %>%
       formatRound(columns=c("sleep_prob","cds_prob"), digits=2) %>% 
@@ -164,7 +166,7 @@ function(input, output, session) {
   })
   
   output$download_data <- downloadHandler(
-    filename = function() "nap_CDS_classifications.csv", # input$dataset
+    filename = function() "sleep_CDS_classifications.csv", # input$dataset
     content <- function(fname) {
       write.csv(mydata() %>% 
                   select(-AWC, -CTC, -CVC, -noise, -silence, -silence, -distant, -tv, -meaningful), 
@@ -182,7 +184,7 @@ function(input, output, session) {
       mutate(Type = case_when(
         sleep_pred==1 ~ "Sleep", 
         cds_pred==0 ~ "Other-directed Speech",
-        cds_pred==1 ~ "Child-directed Speech",
+        cds_pred==1 ~ "Target-child-directed Speech",
         TRUE ~ NA_character_,
       )) %>%
       group_by(Type) %>% 
@@ -195,7 +197,8 @@ function(input, output, session) {
                 tv=mean(tv),
                 silence=mean(silence), N=n()) %>% 
       arrange(CVC)
-  }, rownames= FALSE) %>% formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=2)
+  }, rownames= FALSE, options = list(dom = 't')) %>% 
+    formatRound(columns=c("AWC", "CTC", "CVC", "noise", "silence", "distant", "tv", "meaningful"), digits=2)
   # options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')) # <- download button?
   )
   

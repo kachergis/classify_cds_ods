@@ -4,7 +4,7 @@ library(shiny)
 ui <- fluidPage(
 
     # Application title
-    titlePanel("Identifying Periods of Sleep and Child-directed Speech in Daylong LENA Recordings"),
+    titlePanel("Identifying Periods of Sleep and Target-Child-Directed Speech in Daylong LENA Recordings"),
 
     # Sidebar 
     sidebarLayout(
@@ -35,8 +35,9 @@ ui <- fluidPage(
             tabPanel("Overview and Instructions", 
                    br(),
                    h3("Overview"),
-                   p("This app will let you upload segment summaries from LENA recordings, and will assign a probability to each segment for 1) periods of sleep vs. a waking period, and 2) predominantly containing child-directed speech (CDS) vs. other-directed speech (ODS)."),
+                   p("This app will let you upload segment summaries from LENA recordings, and will assign a probability to each segment for 1) periods of sleep vs. a waking period, and 2) predominantly containing target-child-directed speech (tCDS) vs. other-directed speech (ODS)."),
                    p("For full documentation of how the classifiers were constructed, including discussion of potential limitations to generalizability, see Bang, Kachergis, Weisleder, and Marchman (submitted)."),
+                   p("Note: The sleep decision tree and tCDS/ODS XGboost classifier were trained on the default 5-minute segments provided by LENA. Users can use shorter or longer duration segments if desired, but it is unknown how well the classifiers will generalize, so any datasets that vary significantly from the training data should be manually evaluated for sleep, tCDS, and ODS."),
                    #br(),
                    h3("Instructions"),
                    p("You will first need to export your LENA data in 5-minute segments, and then save them in a comma-/tab-separated format (see required column names below). Once you have your LENA segment data ready to upload, in the panel at left select 'Browse...' and navigate to that file."),
@@ -44,9 +45,9 @@ ui <- fluidPage(
                    p("Your data will have four additional columns, denoting for each segment:"),
                    p(HTML("<b>nap_prob</b> - the classifier-predicted probability that the child was predominantly asleep during recording (i.e., nap_prob=0.95 means the child was very likely napping, while nap_prob=.05 means the child was very likely awake)")),
                    p(HTML("<b>nap_pred</b> - binarized nap_prob (1=asleep, 0=awake)")),
-                   p(HTML("<b>cds_prob</b> - the classifier-predicted probability that the segment contains predominantly CDS (NA if asleep)")),
-                   p(HTML("<b>cds_pred</b> - binarized cds_prob (1=CDS, 0=ODS; NA if asleep)")),
-                   p("Note that the segments in your downloaded data will be in the same order as your uploaded segments, but that the LENA speech values (AWC, CTC, CVC) will now be normalized to per-minute values (e.g., AWC/dur_min). Extra variables will be dropped."),
+                   p(HTML("<b>cds_prob</b> - the classifier-predicted probability that the segment contains predominantly tCDS (NA if asleep)")),
+                   p(HTML("<b>cds_pred</b> - binarized cds_prob (1=tCDS, 0=ODS; NA if asleep)")),
+                   p("Note that the segments in your downloaded data will be in the same order as your uploaded segments, but that the LENA speech values (AWC, CTC, CVC) will now be normalized to per-minute values (e.g., AWC/dur_min). Extra variables will be ignored, but preserved in the downloaded data."),
                    br(),
                    h4("Required Data Format"),
                    p("The following columns are required when uploading your data (extra columns will be ignored; column order is not important):"),
