@@ -11,6 +11,7 @@ library(xgboost)
 library(lubridate)
 #library(kableExtra)
 
+# LENA Pro (pre-2021, non-cloud)
 required_columns <- c('id', 'AWC', 'CTC', 'CVC', 'dur_min', 'meaningful_min',
                       'tv_min', 'noise_min', 'silence_min', 'distant_min')
 
@@ -45,6 +46,30 @@ get_features <- function(raw) {
   return(dat)
 }
 
+
+# select important columns and normalize to per-minute values
+get_features <- function(raw) {
+  # durations is sometimes in HMS format (LENA Pro) - convert any HMS columns to minutes
+  for(c in duration_columns) {
+    if(!is.numeric(raw$dur_min)) raw[,c] = as.numeric(as.duration(hms(raw[,c]))) / 60
+  }
+  
+  dat <- raw %>% 
+    mutate(AWC = AWC / dur_min, # per minute log(AWC+.01)
+           CTC = CTC / dur_min, 
+           CVC = CVC / dur_min,
+           noise = noise_min / dur_min, # proportion of segment's duration that is noise
+           silence = silence_min / dur_min,
+           distant = distant_min / dur_min,
+           tv = tv_min / dur_min,
+           meaningful = meaningful_min / dur_min
+           #cds_ods = ifelse(cds_ods=="split" | cds_ods=="nap", 0, cds_ods), # re-classify "split" & "nap" as ODS
+    ) %>%
+    dplyr::select(id, AWC, CTC, CVC, noise, silence, distant, tv, meaningful)
+  return(dat)
+}
+
+
 get_sleep_predictions <- function(dat) {
   dat <- dat %>%
     mutate(sleep_prob = predict(sleep.model, dat)[,2], # probability of a segment being sleep
@@ -66,6 +91,9 @@ run_test <- function() {
   raw <- read.csv(here("data_sample_00h00m00s.csv")) # with LENA pro HMS duration format
   raw <- read.csv(here("data_SOT_Stanford_withNAPS.csv"))
   raw <- read.csv(here("data_example_classifer_7334_habla25.csv")) # a lot of NA values
+  raw <- read.csv(here("example_data/LENA_SP_Export_5Min.csv")) # new LENA SP cloud 
+  # ChildKey, Duration_Secs, AWC_COUNT, CT_COUNT, etc
+  
   dat <- get_features(raw) 
   table(raw$cds_ohs) # human raters: 427 sleep, 2028 CDS, 267 split, 768 ODS
   dat_naps <- get_sleep_predictions(dat) %>% 
@@ -110,7 +138,63 @@ function(input, output, session) {
                     sep = input$sep,  
                     dec = input$dec)
     
-    dat <- raw_dat %>% select(required_columns) %>% # validate this?
+    validate(
+      need("id" %in% names(raw_dat), "Need 'id' column in uploaded CSV."),
+      need(("AWC" %in% names(raw_dat)) | ("AWC_COUNT" %in% names(raw_dat)) , "Error: Need 'AWC' or 'AWC_COUNT' in uploaded CSV."),
+      need(("CTC" %in% names(raw_dat)) | ("CT_COUNT" %in% names(raw_dat)) , "Error: Need 'CTC' or 'CT_COUNT' in uploaded CSV."),
+      need(("CVC" %in% names(raw_dat)) | ("CV_COUNT" %in% names(raw_dat)) , "Error: Need 'CVC' or 'CV_COUNT' in uploaded CSV."),
+      need(("dur_min" %in% names(raw_dat)) | ("Duration_Secs" %in% names(raw_dat)) , "Error: Need 'dur_min' or 'Duration_Secs' in uploaded CSV."),
+      need(("meaningful_min" %in% names(raw_dat)) | ("Meaningful" %in% names(raw_dat)) , "Error: Need 'meaningful_min' or 'Meaningful' in uploaded CSV."),
+      need(("tv_min" %in% names(raw_dat)) | ("TV_Secs" %in% names(raw_dat)) , "Error: Need 'tv_min' or 'TV_Secs' in uploaded CSV."),
+      need(("noise_min" %in% names(raw_dat)) | ("Noise" %in% names(raw_dat)) , "Error: Need 'noise_min' or 'Noise' in uploaded CSV."),
+      need(("silence_min" %in% names(raw_dat)) | ("Silence" %in% names(raw_dat)) , "Error: Need 'silence_min' or 'Silence' in uploaded CSV."),
+      need(("distant_min" %in% names(raw_dat)) | ("Distant" %in% names(raw_dat)) , "Error: Need 'distant_min' or 'Distant' in uploaded CSV.")
+    )
+    
+    dat <- raw_dat 
+    
+    raw_dat <- raw_dat %>%
+      #rename(AWC_total = AWC, 
+      #       CTC_total = CTC, 
+      #       CVC_total = CVC) %>%
+      mutate(segment = 1:n())
+    
+    # if we have any LENA SP cloud columns, convert them to our desired format
+    if("Duration_Secs" %in% names(dat)) {
+      dat <- dat %>% mutate(dur_min = Duration_Secs / 60) %>%
+        select(-Duration_Secs)
+    }
+    
+    if("AWC_COUNT" %in% names(dat)) dat <- dat %>% rename(AWC = AWC_COUNT)
+    if("CT_COUNT" %in% names(dat)) dat <- dat %>% rename(CTC = CT_COUNT)
+    if("CV_COUNT" %in% names(dat)) dat <- dat %>% rename(CVC = CV_COUNT)
+    
+    if("Meaningful" %in% names(dat)) {
+      dat <- dat %>% mutate(meaningful_min = Meaningful / 60) %>%
+        select(-Meaningful)
+    }
+    
+    if("TV_Secs" %in% names(dat)) {
+      dat <- dat %>% mutate(tv_min = TV_Secs / 60) %>%
+        select(-TV_Secs)
+    }
+    
+    if("Noise" %in% names(dat)) {
+      dat <- dat %>% mutate(noise_min = Noise / 60) %>%
+        select(-Noise)
+    }
+    
+    if("Silence" %in% names(dat)) {
+      dat <- dat %>% mutate(silence_min = Silence / 60) %>%
+        select(-Silence)
+    }
+    
+    if("Distant" %in% names(dat)) {
+      dat <- dat %>% mutate(distant_min = Distant / 60) %>%
+        select(-Distant)
+    }
+    
+    dat <- dat %>% select(all_of(required_columns)) %>%
       drop_na() # remove rows with NA values
     
     # want to save uploaded data, and add classification columns to it for download
@@ -124,12 +208,6 @@ function(input, output, session) {
     proc_dat <- dat_naps %>% left_join(dat_cds) %>%
       mutate(cds_pred = ifelse(sleep_pred==1, NA, cds_pred), # if napping, then don't classify CDS/ODS
              cds_prob = ifelse(sleep_pred==1, NA, cds_prob)) 
-    
-    raw_dat <- raw_dat %>%
-      rename(AWC_total = AWC, 
-             CTC_total = CTC, 
-             CVC_total = CVC) %>%
-      mutate(segment = 1:n())
     
     all_dat <- raw_dat %>% left_join(proc_dat, by=c('id','segment'))
     
