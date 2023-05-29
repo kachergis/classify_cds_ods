@@ -15,11 +15,15 @@ library(lubridate)
 required_columns <- c('id', 'AWC', 'CTC', 'CVC', 'dur_min', 'meaningful_min',
                       'tv_min', 'noise_min', 'silence_min', 'distant_min')
 
+# new LENA SP cloud -- all durations are in seconds
+required_columns_SP <- c('ChildKey','AWC_COUNT','CT_COUNT','CV_COUNT','Duration_Secs','Meaningful',
+                         'TV_Secs','Noise','Silence','Distant') 
+
 # these can be in H:M:S (e.g. 0:05:00) or numeric minute (5.0) format
 duration_columns <- required_columns[endsWith(required_columns, "_min")]
 
 # load sleep classifier
-sleep.model <- readRDS(file="models/sleep_classifier.Rds")
+sleep.model <- xgb.load("models/final_rawLENA_xgb_sleep.model")
 
 # load CDS classifier
 cds.model <- xgb.load("models/final_rawLENA_xgb.model")
@@ -71,10 +75,11 @@ get_features <- function(raw) {
 
 
 get_sleep_predictions <- function(dat) {
-  dat <- dat %>%
-    mutate(sleep_prob = predict(sleep.model, dat)[,2], # probability of a segment being sleep
+  xdat <- xgb.DMatrix(data.matrix(dat %>% select(-id)), missing = NA)
+  d <- dat %>%
+    mutate(sleep_prob = predict(sleep.model, xdat), # probability
            sleep_pred = ifelse(sleep_prob > .5, 1, 0)) # binarized
-  return(dat)
+  return(d)
 }
 
 get_cds_predictions <- function(dat) {
@@ -91,8 +96,7 @@ run_test <- function() {
   raw <- read.csv(here("data_sample_00h00m00s.csv")) # with LENA pro HMS duration format
   raw <- read.csv(here("data_SOT_Stanford_withNAPS.csv"))
   raw <- read.csv(here("data_example_classifer_7334_habla25.csv")) # a lot of NA values
-  raw <- read.csv(here("example_data/LENA_SP_Export_5Min.csv")) # new LENA SP cloud 
-  # ChildKey, Duration_Secs, AWC_COUNT, CT_COUNT, etc
+  #raw <- read.csv(here("example_data/LENA_SP_Export_5Min.csv")) # new LENA SP cloud 
   
   dat <- get_features(raw) 
   table(raw$cds_ohs) # human raters: 427 sleep, 2028 CDS, 267 split, 768 ODS
