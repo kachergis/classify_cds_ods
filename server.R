@@ -214,7 +214,7 @@ function(input, output, session) {
       mutate(cds_pred = ifelse(sleep_pred==1, NA, cds_pred), # if napping, then don't classify CDS/ODS
              cds_prob = ifelse(sleep_pred==1, NA, cds_prob)) 
     
-    all_dat <- raw_dat %>% left_join(proc_dat, by=c('id','segment'))
+    all_dat <- raw_dat %>% left_join(proc_dat, by=c('id','segment'), suffix=c("_original",""))
     
     return(all_dat) # was proc_dat
   })
