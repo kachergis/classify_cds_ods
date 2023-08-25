@@ -96,6 +96,7 @@ run_test <- function() {
   raw <- read.csv(here("data_sample_00h00m00s.csv")) # with LENA pro HMS duration format
   raw <- read.csv(here("data_SOT_Stanford_withNAPS.csv"))
   raw <- read.csv(here("data_example_classifer_7334_habla25.csv")) # a lot of NA values
+  raw <- read.csv(here("example_data/data_example_for_classifier.csv"))
   #raw <- read.csv(here("example_data/LENA_SP_Export_5Min.csv")) # new LENA SP cloud 
   
   dat <- get_features(raw) 
