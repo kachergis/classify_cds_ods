@@ -55,7 +55,7 @@ get_features <- function(raw) {
 get_features <- function(raw) {
   # durations is sometimes in HMS format (LENA Pro) - convert any HMS columns to minutes
   for(c in duration_columns) {
-    if(!is.numeric(raw$dur_min)) raw[,c] = as.numeric(as.duration(hms(raw[,c]))) / 60
+    if(!is.numeric(raw[,c])) raw[,c] = as.numeric(as.duration(hms(raw[,c]))) / 60
   }
   
   dat <- raw %>% 
