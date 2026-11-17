@@ -22,40 +22,28 @@ required_columns_SP <- c('ChildKey','AWC_COUNT','CT_COUNT','CV_COUNT','Duration_
 # these can be in H:M:S (e.g. 0:05:00) or numeric minute (5.0) format
 duration_columns <- required_columns[endsWith(required_columns, "_min")]
 
+# model input features, in the order both classifiers were trained on
+# (see add_features() in the cds_classifier repo)
+feature_cols <- c('AWC', 'CTC', 'CVC', 'noise', 'silence', 'distant', 'tv', 'meaningful')
+
+# Models were trained in cds_classifier (03-build_classifier.R) and converted from
+# xgboost's legacy binary format to JSON, with feature names attached.
 # load sleep classifier
-sleep.model <- xgb.load("models/final_rawLENA_xgb_sleep.model")
+sleep.model <- xgb.load("models/final_rawLENA_xgb_sleep.json")
 
 # load CDS classifier
-cds.model <- xgb.load("models/final_rawLENA_xgb.model")
+cds.model <- xgb.load("models/final_rawLENA_xgb.json")
+
+# xgboost's predict() does not check column names or counts, so check once here
+# that both models expect exactly feature_cols, in this order
+stopifnot(identical(variable.names(sleep.model), feature_cols),
+          identical(variable.names(cds.model), feature_cols))
 
 # select important columns and normalize to per-minute values
 get_features <- function(raw) {
   # durations is sometimes in HMS format (LENA Pro) - convert any HMS columns to minutes
   for(c in duration_columns) {
-    if(!is.numeric(raw$dur_min)) raw[,c] = as.numeric(as.duration(hms(raw[,c]))) / 60
-  }
-  
-  dat <- raw %>% 
-    mutate(AWC = AWC / dur_min, # per minute log(AWC+.01)
-           CTC = CTC / dur_min, 
-           CVC = CVC / dur_min,
-           noise = noise_min / dur_min, # proportion of segment's duration that is noise
-           silence = silence_min / dur_min,
-           distant = distant_min / dur_min,
-           tv = tv_min / dur_min,
-           meaningful = meaningful_min / dur_min
-           #cds_ods = ifelse(cds_ods=="split" | cds_ods=="nap", 0, cds_ods), # re-classify "split" & "nap" as ODS
-           ) %>%
-    dplyr::select(id, AWC, CTC, CVC, noise, silence, distant, tv, meaningful)
-  return(dat)
-}
-
-
-# select important columns and normalize to per-minute values
-get_features <- function(raw) {
-  # durations is sometimes in HMS format (LENA Pro) - convert any HMS columns to minutes
-  for(c in duration_columns) {
-    if(!is.numeric(raw[,c])) raw[,c] = as.numeric(as.duration(hms(raw[,c]))) / 60
+    if(!is.numeric(raw[[c]])) raw[[c]] = as.numeric(as.duration(hms(raw[[c]]))) / 60
   }
   
   dat <- raw %>% 
@@ -69,25 +57,36 @@ get_features <- function(raw) {
            meaningful = meaningful_min / dur_min
            #cds_ods = ifelse(cds_ods=="split" | cds_ods=="nap", 0, cds_ods), # re-classify "split" & "nap" as ODS
     ) %>%
-    dplyr::select(id, AWC, CTC, CVC, noise, silence, distant, tv, meaningful)
+    dplyr::select(id, any_of("segment"), all_of(feature_cols))
   return(dat)
 }
 
+# model input matrix: exactly feature_cols, in training order
+feature_matrix <- function(dat) {
+  xgb.DMatrix(data.matrix(dat[, feature_cols]), missing = NA)
+}
 
 get_sleep_predictions <- function(dat) {
-  xdat <- xgb.DMatrix(data.matrix(dat %>% select(-id)), missing = NA)
   d <- dat %>%
-    mutate(sleep_prob = predict(sleep.model, xdat), # probability
+    mutate(sleep_prob = predict(sleep.model, feature_matrix(dat)), # probability
            sleep_pred = ifelse(sleep_prob > .5, 1, 0)) # binarized
   return(d)
 }
 
 get_cds_predictions <- function(dat) {
-  xdat <- xgb.DMatrix(data.matrix(dat %>% select(-id)), missing = NA)
   dat <- dat %>%
-    mutate(cds_prob = predict(cds.model, xdat), # probability
+    mutate(cds_prob = predict(cds.model, feature_matrix(dat)), # probability
            cds_pred = ifelse(cds_prob > .5, 1, 0)) # binarized
   return(dat)
+}
+
+# run both classifiers; tCDS/ODS is only classified for awake segments
+classify_segments <- function(dat) {
+  dat %>%
+    get_sleep_predictions() %>%
+    get_cds_predictions() %>%
+    mutate(cds_pred = ifelse(sleep_pred==1, NA, cds_pred),
+           cds_prob = ifelse(sleep_pred==1, NA, cds_prob))
 }
 
 
@@ -99,21 +98,11 @@ run_test <- function() {
   raw <- read.csv(here("example_data/data_example_for_classifier.csv"))
   #raw <- read.csv(here("example_data/LENA_SP_Export_5Min.csv")) # new LENA SP cloud 
   
-  dat <- get_features(raw) 
+  dat <- get_features(raw)
   table(raw$cds_ohs) # human raters: 427 sleep, 2028 CDS, 267 split, 768 ODS
-  dat_naps <- get_sleep_predictions(dat) %>% 
-    mutate(segment = 1:n())
-  table(dat_naps$sleep_pred) # 350 sleep, 3140 awake
-  dat_cds <- get_cds_predictions(dat) %>% # Feature names stored in `object` and `newdata` are different!
-    mutate(segment = 1:n())
-  table(dat_cds$cds_pred) # 833 ODS, 2657 CDS
-  
-  proc_dat <- dat_naps %>% left_join(dat_cds) %>%
-    mutate(cds_pred = ifelse(sleep_pred==1, NA, cds_pred),
-           cds_prob = ifelse(sleep_pred==1, NA, cds_prob))
-  #table(proc_dat$sleep_pred) # 350 sleep, 3140 awake
-  #table(proc_dat$cds_pred) # 2606 CDS, 534 ODS
-  
+  proc_dat <- classify_segments(dat)
+  table(proc_dat$sleep_pred) # example data: 329 sleep, 3161 awake
+  table(proc_dat$cds_pred) # example data: 2157 CDS, 1004 ODS
 }
   
 # Define server logic 
@@ -142,9 +131,14 @@ function(input, output, session) {
                     header = input$header, 
                     sep = input$sep,  
                     dec = input$dec)
-    
+
+    # LENA SP cloud exports identify the child with ChildKey instead of id
+    if(!("id" %in% names(raw_dat)) & ("ChildKey" %in% names(raw_dat))) {
+      raw_dat <- raw_dat %>% mutate(id = ChildKey)
+    }
+
     validate(
-      need("id" %in% names(raw_dat), "Need 'id' column in uploaded CSV."),
+      need("id" %in% names(raw_dat), "Need 'id' (or 'ChildKey') column in uploaded CSV."),
       need(("AWC" %in% names(raw_dat)) | ("AWC_COUNT" %in% names(raw_dat)) , "Error: Need 'AWC' or 'AWC_COUNT' in uploaded CSV."),
       need(("CTC" %in% names(raw_dat)) | ("CT_COUNT" %in% names(raw_dat)) , "Error: Need 'CTC' or 'CT_COUNT' in uploaded CSV."),
       need(("CVC" %in% names(raw_dat)) | ("CV_COUNT" %in% names(raw_dat)) , "Error: Need 'CVC' or 'CV_COUNT' in uploaded CSV."),
@@ -156,14 +150,13 @@ function(input, output, session) {
       need(("distant_min" %in% names(raw_dat)) | ("Distant" %in% names(raw_dat)) , "Error: Need 'distant_min' or 'Distant' in uploaded CSV.")
     )
     
-    dat <- raw_dat 
-    
+    # number segments before any rows are dropped, so predictions can be
+    # joined back to the right rows of the uploaded data
     raw_dat <- raw_dat %>%
-      #rename(AWC_total = AWC, 
-      #       CTC_total = CTC, 
-      #       CVC_total = CVC) %>%
       mutate(segment = 1:n())
-    
+
+    dat <- raw_dat
+
     # if we have any LENA SP cloud columns, convert them to our desired format
     if("Duration_Secs" %in% names(dat)) {
       dat <- dat %>% mutate(dur_min = Duration_Secs / 60) %>%
@@ -199,20 +192,13 @@ function(input, output, session) {
         select(-Distant)
     }
     
-    dat <- dat %>% select(all_of(required_columns)) %>%
+    dat <- dat %>% select(segment, all_of(required_columns)) %>%
       drop_na() # remove rows with NA values
-    
+
     # want to save uploaded data, and add classification columns to it for download
-    
-    proc_dat <- get_features(dat) 
-    
-    dat_naps <- get_sleep_predictions(proc_dat) %>%
-      mutate(segment = 1:n())
-    dat_cds <- get_cds_predictions(proc_dat) %>%
-      mutate(segment = 1:n())
-    proc_dat <- dat_naps %>% left_join(dat_cds) %>%
-      mutate(cds_pred = ifelse(sleep_pred==1, NA, cds_pred), # if napping, then don't classify CDS/ODS
-             cds_prob = ifelse(sleep_pred==1, NA, cds_prob)) 
+
+    proc_dat <- get_features(dat) %>%
+      classify_segments() # if napping, then don't classify CDS/ODS
     
     all_dat <- raw_dat %>% left_join(proc_dat, by=c('id','segment'), suffix=c("_original",""))
     
